@@ -2,7 +2,7 @@
 with pkgs;
 mkShell rec{
   buildInputs = with pkgs; [
-
+    rustup
     xorg.libX11
     xorg.libXcursor
     xorg.libXrandr
@@ -25,5 +25,7 @@ mkShell rec{
     export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${builtins.toString (pkgs.lib.makeLibraryPath buildInputs)}"
     export VULKAN_SDK="${vulkan-headers}"
     export VK_LAYER_PATH="${vulkan-validation-layers}/share/vulkan/explicit_layer.d"
+    rustup default stable
+    cargo build
   '';
 }

@@ -59,6 +59,9 @@ fn main() -> Result<()> {
                 }
                 _ => {}
             },
+            Event::LoopExiting => {
+                debug!("exiting loop");
+            }
             _ => {}
         }
     })?;
