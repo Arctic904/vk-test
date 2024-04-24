@@ -9,8 +9,8 @@
 use anyhow::Result;
 use log::error;
 use winit::dpi::LogicalSize;
-use winit::event::{self, Event, WindowEvent};
-use winit::event_loop::{self, EventLoop};
+use winit::event::{Event, WindowEvent};
+use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowBuilder};
 
 fn main() -> Result<()> {
