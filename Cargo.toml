@@ -6,5 +6,12 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-vulkanalia = "0.23.0"
-winit = "0.29.15"
+anyhow = "1.0.82"
+cgmath = "0.18.0"
+log = "0.4.21"
+png = "0.17.13"
+pretty_env_logger = "0.5.0"
+thiserror = "1.0.59"
+tobj = { version = "4.0.2", features = ["log"] }
+vulkanalia = { version =  "0.23.0", features = ["libloading", "provisional", "window"]}
+winit = {version = "0.29.15", features = ["default"]}
