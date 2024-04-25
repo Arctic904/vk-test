@@ -115,7 +115,7 @@ struct AppData {
 
 unsafe fn create_instance(window: &Window, entry: &Entry, data: &mut AppData) -> Result<Instance> {
     let application_info = vk::ApplicationInfo::builder()
-        .application_name(b"VK-test\0")
+        .application_name(b"VK Test\0")
         .application_version(vk::make_version(0, 1, 0))
         .engine_name(b"No Engine\0")
         .engine_version(vk::make_version(0, 1, 0))
@@ -142,10 +142,6 @@ unsafe fn create_instance(window: &Window, entry: &Entry, data: &mut AppData) ->
         .map(|e| e.as_ptr())
         .collect::<Vec<_>>();
 
-    if VALIDATION_ENABLED {
-        extensions.push(vk::EXT_DEBUG_UTILS_EXTENSION.name.as_ptr());
-    }
-
     // Required by Vulkan SDK on macOS since 1.3.216.
     let flags = if cfg!(target_os = "macos") && entry.version()? >= PORTABILITY_MACOS_VERSION {
         info!("Enabling extensions for macOS portability.");
@@ -159,6 +155,10 @@ unsafe fn create_instance(window: &Window, entry: &Entry, data: &mut AppData) ->
     } else {
         vk::InstanceCreateFlags::empty()
     };
+
+    if VALIDATION_ENABLED {
+        extensions.push(vk::EXT_DEBUG_UTILS_EXTENSION.name.as_ptr());
+    }
 
     let mut info = vk::InstanceCreateInfo::builder()
         .application_info(&application_info)
