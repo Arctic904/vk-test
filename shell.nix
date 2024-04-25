@@ -36,7 +36,6 @@ pkgs.mkShell rec{
     export VULKAN_SDK="${pkgs.vulkan-headers}:${pkgs.vulkan-loader}"
     export VK_LAYER_PATH="${pkgs.vulkan-validation-layers}/share/vulkan/explicit_layer.d"
     export RUST_LOG=info
-    export VK_LOADER_DEBUG=all
-    rustup default stable
+    export VK_LOADER_DEBUG=none
   '';
 }

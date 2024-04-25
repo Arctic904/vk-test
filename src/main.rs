@@ -10,6 +10,7 @@ use log::*;
 use std::collections::HashSet;
 use std::ffi::CStr;
 use std::os::raw::c_void;
+use thiserror::Error;
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk::ExtDebugUtilsExtension;
@@ -34,7 +35,7 @@ fn main() -> Result<()> {
 
     let event_loop = EventLoop::new()?;
     let window = WindowBuilder::new()
-        .with_title("Vulkan Tutorial (Rust)")
+        .with_title("Vulkan Test")
         .with_inner_size(LogicalSize::new(1024, 768))
         .build(&event_loop)?;
 
@@ -75,6 +76,7 @@ struct App {
     entry: Entry,
     instance: Instance,
     data: AppData,
+    device: Device,
 }
 
 impl App {
@@ -84,10 +86,12 @@ impl App {
         let entry = Entry::new(loader).map_err(|b| anyhow!("{}", b))?;
         let mut data = AppData::default();
         let instance = create_instance(window, &entry, &mut data)?;
+        let device = create_logical_device(&entry, &instance, &mut data)?;
         Ok(Self {
             entry,
             instance,
             data,
+            device,
         })
     }
 
@@ -98,6 +102,7 @@ impl App {
 
     /// Destroys our Vulkan app.
     unsafe fn destroy(&mut self) {
+        self.device.destroy_device(None);
         if VALIDATION_ENABLED {
             self.instance
                 .destroy_debug_utils_messenger_ext(self.data.messenger, None);
@@ -107,19 +112,130 @@ impl App {
     }
 }
 
+#[derive(Debug, Error)]
+#[error("Missing {0}.")]
+pub struct SuitabilityError(pub &'static str);
+
+unsafe fn pick_physical_device(instance: &Instance, data: &mut AppData) -> Result<()> {
+    for physical_device in instance.enumerate_physical_devices()? {
+        let properties = instance.get_physical_device_properties(physical_device);
+
+        if let Err(error) = check_physical_device(instance, data, physical_device) {
+            warn!("Skipping physical device (`{}`).", properties.device_name)
+        } else {
+            info!("Selected physical device (`{}`).", properties.device_name);
+            data.physical_device = physical_device;
+            return Ok(());
+        }
+    }
+
+    Err(anyhow!("Failed to find suitable physical device."))
+}
+
+unsafe fn check_physical_device(
+    instance: &Instance,
+    data: &AppData,
+    physical_device: vk::PhysicalDevice,
+) -> Result<()> {
+    // info!("{:?}", physical_device);
+    QueueFamilyIndices::get(instance, data, physical_device)?;
+    let properties = instance.get_physical_device_properties(physical_device);
+    if properties.device_type != vk::PhysicalDeviceType::DISCRETE_GPU {
+        return Err(anyhow!(SuitabilityError(
+            "Only Discrete GPUs are supported."
+        )));
+    }
+    let features = instance.get_physical_device_features(physical_device);
+    if features.geometry_shader != vk::TRUE {
+        return Err(anyhow!(SuitabilityError(
+            "Missing geometry shader support."
+        )));
+    }
+    Ok(())
+}
+
+unsafe fn create_logical_device(
+    entry: &Entry,
+    instance: &Instance,
+    data: &mut AppData,
+) -> Result<Device> {
+    let indices = QueueFamilyIndices::get(instance, data, data.physical_device)?;
+
+    let queue_priorities = &[1.0];
+    let queue_info = vk::DeviceQueueCreateInfo::builder()
+        .queue_family_index(indices.graphics)
+        .queue_priorities(queue_priorities);
+
+    let layers = if VALIDATION_ENABLED {
+        vec![VALIDATION_LAYER.as_ptr()]
+    } else {
+        vec![]
+    };
+
+    let mut extensions = vec![];
+    if cfg!(target_os = "macos") && entry.version()? >= PORTABILITY_MACOS_VERSION {
+        extensions.push(vk::KHR_PORTABILITY_SUBSET_EXTENSION.name.as_ptr());
+    }
+
+    let features = vk::PhysicalDeviceFeatures::builder();
+
+    let queue_infos = &[queue_info];
+    let info = vk::DeviceCreateInfo::builder()
+        .queue_create_infos(queue_infos)
+        .enabled_layer_names(&layers)
+        .enabled_extension_names(&extensions)
+        .enabled_features(&features);
+
+    let device = instance.create_device(data.physical_device, &info, None)?;
+
+    data.graphics_queue = device.get_device_queue(indices.graphics, 0);
+
+    Ok(device)
+}
+
+#[derive(Copy, Clone, Debug)]
+struct QueueFamilyIndices {
+    graphics: u32,
+}
+
+impl QueueFamilyIndices {
+    unsafe fn get(
+        instance: &Instance,
+        data: &AppData,
+        physical_device: vk::PhysicalDevice,
+    ) -> Result<Self> {
+        let properties = instance.get_physical_device_queue_family_properties(physical_device);
+
+        let graphics = properties
+            .iter()
+            .position(|p| p.queue_flags.contains(vk::QueueFlags::GRAPHICS))
+            .map(|i| i as u32);
+
+        if let Some(graphics) = graphics {
+            Ok(Self { graphics })
+        } else {
+            Err(anyhow!(SuitabilityError(
+                "Missing required queue families."
+            )))
+        }
+    }
+}
+
 /// The Vulkan handles and associated properties used by our Vulkan app.
 #[derive(Clone, Debug, Default)]
 struct AppData {
     messenger: vk::DebugUtilsMessengerEXT,
+    physical_device: vk::PhysicalDevice,
+    graphics_queue: vk::Queue,
 }
 
 unsafe fn create_instance(window: &Window, entry: &Entry, data: &mut AppData) -> Result<Instance> {
     let application_info = vk::ApplicationInfo::builder()
         .application_name(b"VK Test\0")
-        .application_version(vk::make_version(0, 1, 0))
+        .application_version(vk::make_version(1, 0, 0))
         .engine_name(b"No Engine\0")
-        .engine_version(vk::make_version(0, 1, 0))
-        .api_version(vk::make_version(0, 1, 0));
+        .engine_version(vk::make_version(1, 0, 0))
+        .api_version(vk::make_version(1, 0, 0));
 
     let available_layers = entry
         .enumerate_instance_layer_properties()?
