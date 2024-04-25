@@ -69,6 +69,50 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+/// Our Vulkan app.
+#[derive(Clone, Debug)]
+struct App {
+    entry: Entry,
+    instance: Instance,
+    data: AppData,
+}
+
+impl App {
+    /// Creates our Vulkan app.
+    unsafe fn create(window: &Window) -> Result<Self> {
+        let loader = LibloadingLoader::new(LIBRARY)?;
+        let entry = Entry::new(loader).map_err(|b| anyhow!("{}", b))?;
+        let mut data = AppData::default();
+        let instance = create_instance(window, &entry, &mut data)?;
+        Ok(Self {
+            entry,
+            instance,
+            data,
+        })
+    }
+
+    /// Renders a frame for our Vulkan app.
+    unsafe fn render(&mut self, window: &Window) -> Result<()> {
+        Ok(())
+    }
+
+    /// Destroys our Vulkan app.
+    unsafe fn destroy(&mut self) {
+        if VALIDATION_ENABLED {
+            self.instance
+                .destroy_debug_utils_messenger_ext(self.data.messenger, None);
+        }
+
+        self.instance.destroy_instance(None);
+    }
+}
+
+/// The Vulkan handles and associated properties used by our Vulkan app.
+#[derive(Clone, Debug, Default)]
+struct AppData {
+    messenger: vk::DebugUtilsMessengerEXT,
+}
+
 unsafe fn create_instance(window: &Window, entry: &Entry, data: &mut AppData) -> Result<Instance> {
     let application_info = vk::ApplicationInfo::builder()
         .application_name(b"VK-test\0")
@@ -134,59 +178,10 @@ unsafe fn create_instance(window: &Window, entry: &Entry, data: &mut AppData) ->
     let instance = entry.create_instance(&info, None)?;
 
     if VALIDATION_ENABLED {
-        let debug_info = vk::DebugUtilsMessengerCreateInfoEXT::builder()
-            .message_severity(vk::DebugUtilsMessageSeverityFlagsEXT::all())
-            .message_type(vk::DebugUtilsMessageTypeFlagsEXT::all())
-            .user_callback(Some(debug_callback));
-
         data.messenger = instance.create_debug_utils_messenger_ext(&debug_info, None)?;
     }
 
     Ok(instance)
-}
-
-/// Our Vulkan app.
-#[derive(Clone, Debug)]
-struct App {
-    entry: Entry,
-    instance: Instance,
-    data: AppData,
-}
-
-impl App {
-    /// Creates our Vulkan app.
-    unsafe fn create(window: &Window) -> Result<Self> {
-        let loader = LibloadingLoader::new(LIBRARY)?;
-        let entry = Entry::new(loader).map_err(|b| anyhow!("{}", b))?;
-        let mut data = AppData::default();
-        let instance = create_instance(window, &entry, &mut data)?;
-        Ok(Self {
-            entry,
-            instance,
-            data,
-        })
-    }
-
-    /// Renders a frame for our Vulkan app.
-    unsafe fn render(&mut self, window: &Window) -> Result<()> {
-        Ok(())
-    }
-
-    /// Destroys our Vulkan app.
-    unsafe fn destroy(&mut self) {
-        if VALIDATION_ENABLED {
-            self.instance
-                .destroy_debug_utils_messenger_ext(self.data.messenger, None);
-        }
-
-        self.instance.destroy_instance(None);
-    }
-}
-
-/// The Vulkan handles and associated properties used by our Vulkan app.
-#[derive(Clone, Debug, Default)]
-struct AppData {
-    messenger: vk::DebugUtilsMessengerEXT,
 }
 
 extern "system" fn debug_callback(
