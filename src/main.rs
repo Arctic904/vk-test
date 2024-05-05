@@ -56,7 +56,7 @@ fn main() -> Result<()> {
             Event::AboutToWait => window.request_redraw(),
             Event::WindowEvent { event, .. } => match event {
                 // Render a frame if our Vulkan app is not being destroyed.
-                WindowEvent::RedrawRequested if !elwt.exiting() => {
+                WindowEvent::RedrawRequested if !elwt.exiting() && !minimized => {
                     unsafe { app.render(&window) }.unwrap()
                 }
                 WindowEvent::Resized(size) => {
@@ -228,6 +228,7 @@ impl App {
 
     unsafe fn recreate_swapchain(&mut self, window: &Window) -> Result<()> {
         self.device.device_wait_idle()?;
+        self.destroy_swapchain();
         create_swapchain(window, &self.instance, &self.device, &mut self.data)?;
         create_swapchain_image_views(&self.device, &mut self.data)?;
         create_render_pass(&self.instance, &self.device, &mut self.data)?;
@@ -281,6 +282,12 @@ unsafe fn check_physical_device(
     // info!("{:?}", physical_device);
     QueueFamilyIndices::get(instance, data, physical_device)?;
     check_physical_device_extensions(instance, physical_device)?;
+    println!(
+        "Checking device: {}",
+        instance
+            .get_physical_device_properties(physical_device)
+            .device_name
+    );
 
     let properties = instance.get_physical_device_properties(physical_device);
     // if properties.device_type != vk::PhysicalDeviceType::DISCRETE_GPU {
