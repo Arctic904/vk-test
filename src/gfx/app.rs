@@ -11,6 +11,8 @@ use vulkanalia::vk::KhrSwapchainExtension;
 use vulkanalia::window as vk_window;
 use winit::window::Window;
 
+use self::vertex::create_vertex_buffer;
+
 /// Vulkan app
 #[derive(Clone, Debug)]
 pub struct App {
@@ -132,25 +134,37 @@ impl App {
     }
 
     /// Destroys our Vulkan app.
-        #[rustfmt::skip]
     pub unsafe fn destroy(&mut self) {
-            self.device.device_wait_idle().unwrap();
+        self.device.device_wait_idle().unwrap();
+        
+        self.destroy_swapchain();
+        self.device.destroy_buffer(self.data.vertex_buffer, None);
+        self.device.free_memory(self.data.vertex_buffer_memory, None);
 
-            self.destroy_swapchain();
+        self.data
+            .in_flight_fences
+            .iter()
+            .for_each(|f| self.device.destroy_fence(*f, None));
+        self.data
+            .render_finished_semaphores
+            .iter()
+            .for_each(|s| self.device.destroy_semaphore(*s, None));
+        self.data
+            .image_available_semaphores
+            .iter()
+            .for_each(|s| self.device.destroy_semaphore(*s, None));
+        self.device
+            .destroy_command_pool(self.data.command_pool, None);
+        self.device.destroy_device(None);
+        self.instance.destroy_surface_khr(self.data.surface, None);
 
-            self.data.in_flight_fences.iter().for_each(|f| self.device.destroy_fence(*f, None));
-            self.data.render_finished_semaphores.iter().for_each(|s| self.device.destroy_semaphore(*s, None));
-            self.data.image_available_semaphores.iter().for_each(|s| self.device.destroy_semaphore(*s, None));
-            self.device.destroy_command_pool(self.data.command_pool, None);
-            self.device.destroy_device(None);
-            self.instance.destroy_surface_khr(self.data.surface, None);
-
-            if crate::VALIDATION_ENABLED {
-                self.instance.destroy_debug_utils_messenger_ext(self.data.messenger, None);
-            }
-
-            self.instance.destroy_instance(None);
+        if crate::VALIDATION_ENABLED {
+            self.instance
+                .destroy_debug_utils_messenger_ext(self.data.messenger, None);
         }
+
+        self.instance.destroy_instance(None);
+    }
 
     unsafe fn recreate_swapchain(&mut self, window: &Window) -> Result<()> {
         self.device.device_wait_idle()?;

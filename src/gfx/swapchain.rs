@@ -98,6 +98,7 @@ pub unsafe fn create_swapchain(
     } else {
         vk::SharingMode::EXCLUSIVE
     };
+    queue_family_indices.push(indices.transfer);
 
     let info = vk::SwapchainCreateInfoKHR::builder()
         .surface(data.surface)

@@ -231,7 +231,8 @@ pub unsafe fn create_command_buffers(device: &Device, data: &mut AppData) -> Res
             vk::PipelineBindPoint::GRAPHICS,
             data.pipeline,
         );
-        device.cmd_draw(*command_buffer, 3, 1, 0, 0);
+        device.cmd_bind_vertex_buffers(*command_buffer, 0, &[data.vertex_buffer], &[0]);
+        device.cmd_draw(*command_buffer, vertex::VERTICES.len() as u32, 1, 0, 0);
         device.cmd_end_render_pass(*command_buffer);
 
         device.end_command_buffer(*command_buffer)?;
@@ -259,19 +260,6 @@ pub unsafe fn create_sync_objects(device: &Device, data: &mut AppData) -> Result
         .iter()
         .map(|_| vk::Fence::null())
         .collect();
-
-    Ok(())
-}
-
-pub unsafe fn create_vertex_buffer(
-    instance: &Instance,
-    device: &Device,
-    data: &mut AppData,
-) -> Result<()> {
-    let buffer_info = vk::BufferCreateInfo::builder()
-        .size((size_of::<Vertex>() * vertex::VERTICES.len()) as u64)
-        .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
-        .sharing_mode(vk::SharingMode::CONCURRENT);
 
     Ok(())
 }
