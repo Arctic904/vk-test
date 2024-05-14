@@ -1,8 +1,15 @@
+use std::mem::size_of;
+use std::ptr::copy_nonoverlapping as memcpy;
+use std::time::Instant;
+
 use crate::gfx::device::*;
 use crate::gfx::pipeline::*;
 use crate::gfx::swapchain::*;
 use crate::gfx::*;
 use anyhow::{anyhow, Result};
+use cgmath::point3;
+use cgmath::vec3;
+use cgmath::Deg;
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::vk;
 use vulkanalia::vk::ExtDebugUtilsExtension;
@@ -11,7 +18,7 @@ use vulkanalia::vk::KhrSwapchainExtension;
 use vulkanalia::window as vk_window;
 use winit::window::Window;
 
-use self::vertex::create_vertex_buffer;
+use self::vertex::*;
 
 /// Vulkan app
 #[derive(Clone, Debug)]
@@ -22,6 +29,7 @@ pub struct App {
     pub device: Device,
     pub frame: usize,
     pub resized: bool,
+    pub start: Instant,
 }
 
 impl App {
@@ -37,10 +45,13 @@ impl App {
         create_swapchain(window, &instance, &device, &mut data)?;
         create_swapchain_image_views(&device, &mut data)?;
         create_render_pass(&instance, &device, &mut data)?;
+        create_descriptor_set_layout(&device, &mut data)?;
         create_pipeline(&device, &mut data)?;
         create_framebuffers(&device, &mut data)?;
         create_command_pool(&instance, &device, &mut data)?;
         create_vertex_buffer(&instance, &device, &mut data)?;
+        create_index_buffer(&instance, &device, &mut data)?;
+        create_uniform_buffers(&instance, &device, &mut data)?;
         create_command_buffers(&device, &mut data)?;
         create_sync_objects(&device, &mut data)?;
 
@@ -51,6 +62,7 @@ impl App {
             device,
             frame: 0,
             resized: false,
+            start: Instant::now(),
         })
     }
 
@@ -81,6 +93,8 @@ impl App {
         }
 
         self.data.images_in_flight[image_index as usize] = self.data.in_flight_fences[self.frame];
+
+        self.update_uniform_buffer(image_index)?;
 
         let wait_semaphores = &[self.data.image_available_semaphores[self.frame]];
         let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
@@ -136,10 +150,16 @@ impl App {
     /// Destroys our Vulkan app.
     pub unsafe fn destroy(&mut self) {
         self.device.device_wait_idle().unwrap();
-        
+
         self.destroy_swapchain();
+
+        self.device
+            .destroy_descriptor_set_layout(self.data.descriptor_set_layout, None);
+        self.device.destroy_buffer(self.data.index_buffer, None);
+        self.device.free_memory(self.data.index_buffer_memory, None);
         self.device.destroy_buffer(self.data.vertex_buffer, None);
-        self.device.free_memory(self.data.vertex_buffer_memory, None);
+        self.device
+            .free_memory(self.data.vertex_buffer_memory, None);
 
         self.data
             .in_flight_fences
@@ -155,6 +175,8 @@ impl App {
             .for_each(|s| self.device.destroy_semaphore(*s, None));
         self.device
             .destroy_command_pool(self.data.command_pool, None);
+        self.device
+            .destroy_command_pool(self.data.transfer_command_pool, None);
         self.device.destroy_device(None);
         self.instance.destroy_surface_khr(self.data.surface, None);
 
@@ -174,6 +196,7 @@ impl App {
         create_render_pass(&self.instance, &self.device, &mut self.data)?;
         create_pipeline(&self.device, &mut self.data)?;
         create_framebuffers(&self.device, &mut self.data)?;
+        create_uniform_buffers(&self.instance, &self.device, &mut self.data)?;
         create_command_buffers(&self.device, &mut self.data)?;
         self.data
             .images_in_flight
@@ -182,14 +205,65 @@ impl App {
     }
 
     /// Destroys the parts of our Vulkan app related to the swapchain.
-        #[rustfmt::skip]
     unsafe fn destroy_swapchain(&mut self) {
-            self.device.free_command_buffers(self.data.command_pool, &self.data.command_buffers);
-            self.data.framebuffers.iter().for_each(|f| self.device.destroy_framebuffer(*f, None));
-            self.device.destroy_pipeline(self.data.pipeline, None);
-            self.device.destroy_pipeline_layout(self.data.pipeline_layout, None);
-            self.device.destroy_render_pass(self.data.render_pass, None);
-            self.data.swapchain_image_views.iter().for_each(|v| self.device.destroy_image_view(*v, None));
-            self.device.destroy_swapchain_khr(self.data.swapchain, None);
-        }
+        self.data
+            .uniform_buffers
+            .iter()
+            .for_each(|b| self.device.destroy_buffer(*b, None));
+        self.data
+            .uniform_buffers_memory
+            .iter()
+            .for_each(|m| self.device.free_memory(*m, None));
+        self.device
+            .free_command_buffers(self.data.command_pool, &self.data.command_buffers);
+        self.data
+            .framebuffers
+            .iter()
+            .for_each(|f| self.device.destroy_framebuffer(*f, None));
+        self.device.destroy_pipeline(self.data.pipeline, None);
+        self.device
+            .destroy_pipeline_layout(self.data.pipeline_layout, None);
+        self.device.destroy_render_pass(self.data.render_pass, None);
+        self.data
+            .swapchain_image_views
+            .iter()
+            .for_each(|v| self.device.destroy_image_view(*v, None));
+        self.device.destroy_swapchain_khr(self.data.swapchain, None);
+    }
+
+    unsafe fn update_uniform_buffer(&self, image_index: usize) -> Result<()> {
+        let time = self.start.elapsed().as_secs_f32();
+
+        let model = Mat4::from_axis_angle(vec3(0.0, 0.0, 1.0), Deg(90.0) * time);
+        let view = Mat4::look_at_rh(
+            point3(2.0, 2.0, 2.0),
+            point3(0.0, 0.0, 0.0),
+            vec3(0.0, 0.0, 1.0),
+        );
+
+        let mut proj = cgmath::perspective(
+            Deg(45.0),
+            self.data.swapchain_extent.width as f32 / self.data.swapchain_extent.height as f32,
+            0.1,
+            10.0,
+        );
+
+        proj[1][1] *= -1.0;
+
+        let ubo = UniformBufferObject { model, view, proj };
+
+        let memory = self.device.map_memory(
+            self.data.uniform_buffers_memory[image_index],
+            0,
+            size_of::<UniformBufferObject>() as u64,
+            vk::MemoryMapFlags::empty(),
+        )?;
+
+        memcpy(&ubo, memory.cast(), 1);
+
+        self.device
+            .unmap_memory(self.data.uniform_buffers_memory[image_index]);
+
+        Ok(())
+    }
 }
