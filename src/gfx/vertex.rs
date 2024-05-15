@@ -2,7 +2,7 @@ use std::mem::size_of;
 
 use crate::gfx::*;
 use anyhow::Result;
-use cgmath::{point3, vec2, vec3, Deg};
+use cgmath::{vec2, vec3};
 use std::ptr::copy_nonoverlapping as memcpy;
 use vulkanalia::vk;
 
@@ -167,7 +167,7 @@ pub unsafe fn copy_buffer(
 ) -> Result<()> {
     let info = vk::CommandBufferAllocateInfo::builder()
         .level(vk::CommandBufferLevel::PRIMARY)
-        .command_pool(data.command_pool)
+        .command_pool(data.transfer_command_pool)
         .command_buffer_count(1);
 
     let command_buffer = device.allocate_command_buffers(&info)?[0];
@@ -188,7 +188,7 @@ pub unsafe fn copy_buffer(
     device.queue_submit(data.graphics_queue, &[info], vk::Fence::null())?;
     device.queue_wait_idle(data.graphics_queue)?;
 
-    device.free_command_buffers(data.command_pool, &[command_buffer]);
+    device.free_command_buffers(data.transfer_command_pool, &[command_buffer]);
 
     Ok(())
 }
@@ -279,6 +279,49 @@ pub unsafe fn create_uniform_buffers(
 
         data.uniform_buffers.push(uniform_buffer);
         data.uniform_buffers_memory.push(uniform_buffer_memory);
+    }
+
+    Ok(())
+}
+
+pub unsafe fn create_descriptor_pool(device: &Device, data: &mut AppData) -> Result<()> {
+    let ubo_size = vk::DescriptorPoolSize::builder()
+        .type_(vk::DescriptorType::UNIFORM_BUFFER)
+        .descriptor_count(data.swapchain_images.len() as u32);
+
+    let pool_sizes = &[ubo_size];
+    let info = vk::DescriptorPoolCreateInfo::builder()
+        .pool_sizes(pool_sizes)
+        .max_sets(data.swapchain_images.len() as u32);
+
+    data.descriptor_pool = device.create_descriptor_pool(&info, None)?;
+
+    Ok(())
+}
+
+pub unsafe fn create_descriptor_sets(device: &Device, data: &mut AppData) -> Result<()> {
+    let layouts = vec![data.descriptor_set_layout; data.swapchain_images.len()];
+    let info = vk::DescriptorSetAllocateInfo::builder()
+        .descriptor_pool(data.descriptor_pool)
+        .set_layouts(&layouts);
+
+    data.descriptor_sets = device.allocate_descriptor_sets(&info)?;
+
+    for i in 0..data.swapchain_images.len() {
+        let info = vk::DescriptorBufferInfo::builder()
+            .buffer(data.uniform_buffers[i])
+            .offset(0)
+            .range(size_of::<UniformBufferObject>() as u64);
+
+        let buffer_info = &[info];
+        let ubo_write = vk::WriteDescriptorSet::builder()
+            .dst_set(data.descriptor_sets[i])
+            .dst_binding(0)
+            .dst_array_element(0)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .buffer_info(buffer_info);
+
+        device.update_descriptor_sets(&[ubo_write], &[] as &[vk::CopyDescriptorSet]);
     }
 
     Ok(())
