@@ -98,6 +98,7 @@ pub unsafe fn create_vertex_buffer(
 
     copy_buffer(device, data, staging_buffer, vertex_buffer, size)?;
 
+    info!("After copy buffer");
     device.destroy_buffer(staging_buffer, None);
     device.free_memory(staging_buffer_memory, None);
 
@@ -141,7 +142,7 @@ pub unsafe fn create_buffer(
     Ok((buffer, buffer_memory))
 }
 
-unsafe fn get_memory_type_index(
+pub unsafe fn get_memory_type_index(
     instance: &Instance,
     data: &AppData,
     properties: vk::MemoryPropertyFlags,
@@ -165,33 +166,54 @@ pub unsafe fn copy_buffer(
     destination: vk::Buffer,
     size: vk::DeviceSize,
 ) -> Result<()> {
-    let info = vk::CommandBufferAllocateInfo::builder()
-        .level(vk::CommandBufferLevel::PRIMARY)
-        .command_pool(data.transfer_command_pool)
-        .command_buffer_count(1);
-
-    let command_buffer = device.allocate_command_buffers(&info)?[0];
-
-    let info =
-        vk::CommandBufferBeginInfo::builder().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
-
-    device.begin_command_buffer(command_buffer, &info)?;
+    let command_buffer = begin_single_time_commands(device, data)?;
 
     let regions = vk::BufferCopy::builder().size(size);
     device.cmd_copy_buffer(command_buffer, source, destination, &[regions]);
 
+    end_single_time_commands(device, data, command_buffer)?;
+
+    Ok(())
+}
+
+pub unsafe fn begin_single_time_commands(
+    device: &Device,
+    data: &AppData,
+) -> Result<vk::CommandBuffer> {
+    let info = vk::CommandBufferAllocateInfo::builder()
+        .level(vk::CommandBufferLevel::PRIMARY)
+        .command_pool(data.command_pool)
+        .command_buffer_count(1);
+
+    let command_buffer = device.allocate_command_buffers(&info)?[0];
+
+    let info = vk::CommandBufferBeginInfo::builder()
+        .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+
+    device.begin_command_buffer(command_buffer, &info)?;
+
+    Ok(command_buffer)
+}
+
+pub unsafe fn end_single_time_commands(
+    device: &Device,
+    data: &AppData,
+    command_buffer: vk::CommandBuffer,
+) -> Result<()> {
     device.end_command_buffer(command_buffer)?;
 
     let command_buffers = &[command_buffer];
-    let info = vk::SubmitInfo::builder().command_buffers(command_buffers);
+    let info = vk::SubmitInfo::builder()
+        .command_buffers(command_buffers);
 
     device.queue_submit(data.graphics_queue, &[info], vk::Fence::null())?;
     device.queue_wait_idle(data.graphics_queue)?;
 
-    device.free_command_buffers(data.transfer_command_pool, &[command_buffer]);
+    device.free_command_buffers(data.command_pool, &[command_buffer]);
 
     Ok(())
 }
+
 
 pub unsafe fn create_index_buffer(
     instance: &Instance,
@@ -253,8 +275,7 @@ pub unsafe fn create_descriptor_set_layout(device: &Device, data: &mut AppData) 
     let bindings = &[ubo_binding];
     let info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(bindings);
 
-    let set_layouts = &[data.descriptor_set_layout];
-    let layout_info = vk::PipelineLayoutCreateInfo::builder().set_layouts(set_layouts);
+    data.descriptor_set_layout = device.create_descriptor_set_layout(&info, None)?;
 
     Ok(())
 }

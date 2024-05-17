@@ -14,6 +14,7 @@ pub mod device;
 pub mod pipeline;
 pub mod swapchain;
 pub mod vertex;
+pub mod texture;
 
 /// The Vulkan handles and associated properties used by our Vulkan app.
 #[derive(Clone, Debug, Default)]
@@ -51,6 +52,8 @@ pub struct AppData {
     uniform_buffers_memory: Vec<vk::DeviceMemory>,
     descriptor_pool: vk::DescriptorPool,
     descriptor_sets: Vec<vk::DescriptorSet>,
+    texture_image: vk::Image,
+    texture_image_memory: vk::DeviceMemory,
 }
 
 pub unsafe fn create_instance(
