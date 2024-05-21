@@ -156,7 +156,9 @@ impl App {
         self.device.device_wait_idle().unwrap();
 
         self.destroy_swapchain();
-
+        self.device.destroy_image(self.data.texture_image, None);
+        self.device
+            .free_memory(self.data.texture_image_memory, None);
         self.device
             .destroy_descriptor_set_layout(self.data.descriptor_set_layout, None);
         self.device.destroy_buffer(self.data.index_buffer, None);
@@ -212,7 +214,8 @@ impl App {
 
     /// Destroys the parts of our Vulkan app related to the swapchain.
     unsafe fn destroy_swapchain(&mut self) {
-        self.device.destroy_descriptor_pool(self.data.descriptor_pool, None);
+        self.device
+            .destroy_descriptor_pool(self.data.descriptor_pool, None);
         self.data
             .uniform_buffers
             .iter()
